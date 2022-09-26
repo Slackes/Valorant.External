@@ -134,16 +134,7 @@ HRESULT D3D11StateSaver::restoreSavedState()
 	if (m_featureLevel >= D3D_FEATURE_LEVEL_10_0)
 	{
 		m_pContext->GSSetShader(m_pGS, m_pGSClassInstances, m_numGSClassInstances);
-		m_pContext->GSSetConstantBuffers(0, 1, &m_pGSConstantBuffer);
 
-		m_pContext->GSSetShaderResources(0, 1, &m_pGSSRV);
-
-		if (m_featureLevel >= D3D_FEATURE_LEVEL_11_0)
-		{
-			m_pContext->HSSetShader(m_pHS, m_pHSClassInstances, m_numHSClassInstances);
-
-			m_pContext->DSSetShader(m_pDS, m_pDSClassInstances, m_numDSClassInstances);
-		}
 	}
 
 	m_pContext->IASetVertexBuffers(0, 1, &m_pVB, &m_vertexStride, &m_vertexOffset);
@@ -181,13 +172,6 @@ void D3D11StateSaver::releaseSavedState()
 	for (UINT i = 0; i < m_numPSClassInstances; ++i)
 		SAFE_RELEASE(m_pPSClassInstances[i]);
 	m_numPSClassInstances = 0;
-	SAFE_RELEASE(m_pHS);
-	for (UINT i = 0; i < m_numHSClassInstances; ++i)
-		SAFE_RELEASE(m_pHSClassInstances[i]);
-	m_numHSClassInstances = 0;
-	SAFE_RELEASE(m_pDS);
-	for (UINT i = 0; i < m_numDSClassInstances; ++i)
-		SAFE_RELEASE(m_pDSClassInstances[i]);
 	m_numDSClassInstances = 0;
 	SAFE_RELEASE(m_pVB);
 	m_vertexStride = 0;
@@ -200,4 +184,38 @@ void D3D11StateSaver::releaseSavedState()
 	m_featureLevel = D3D_FEATURE_LEVEL_11_0;
 
 	m_savedState = false;
+}
+
+PVOID ResolveRelativeAddress(PVOID Instruction, ULONG OffsetOffset, ULONG InstructionSize)
+{
+	ULONG_PTR Instr = (ULONG_PTR)Instruction;
+	LONG RipOffset = *(PLONG)(Instr + OffsetOffset);
+	PVOID ResolvedAddr = (PVOID)(Instr + InstructionSize + RipOffset);
+	return ResolvedAddr;
+}
+
+NTSTATUS PatternScan(IN PCUCHAR pattern, IN UCHAR wildcard, IN ULONG_PTR len, IN const VOID* base, IN ULONG_PTR size, OUT PVOID* ppFound)
+{
+	ASSERT(ppFound != NULL && pattern != NULL && base != NULL);
+	if (ppFound == NULL || pattern == NULL || base == NULL) return STATUS_INVALID_PARAMETER;
+
+	for (ULONG_PTR i = 0; i < size - len; i++)
+	{
+		BOOLEAN found = TRUE;
+		for (ULONG_PTR j = 0; j < len; j++)
+		{
+			if (pattern[j] != wildcard && pattern[j] != ((PCUCHAR)base)[i + j])
+			{
+				found = FALSE;
+				break;
+			}
+		}
+		if (found != FALSE)
+		{
+			*ppFound = (PUCHAR)base + i;
+			return STATUS_SUCCESS;
+		}
+	}
+
+	return STATUS_NOT_FOUND;
 }
